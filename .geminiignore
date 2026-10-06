@@ -1,0 +1,6 @@
+/home/user/.keys/
+.keys/
+*.key
+*.pem
+*.priv
+*token*

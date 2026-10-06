@@ -1,0 +1,14 @@
+# Python caches & virtualenvs
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+.pytest_cache/
+
+# Backups
+*.bak
+*.orig
+
+# OS artifacts
+.DS_Store
+Thumbs.db
