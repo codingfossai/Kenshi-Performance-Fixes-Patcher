@@ -145,9 +145,9 @@ MOD_DEFINITIONS: List[Dict] = [
         "category": "game",
         "item_id": "kenshi_x64",
         "filename": "kenshi_x64.exe",
-        "description": "NULL-safe guard in is_trader (0x1405cf4e0) preventing crash when mods like Organize-the-Crafting-Stations sort non-character buildings",
+        "description": "NULL-safe guards: 1) is_trader (0x1405cf4e0) crash fix for Organize-the-Crafting-Stations; 2) UI item-slot 'outside' lookup (0x140713f10) crash fix on items lacking visual layout containers",
         "orig_sha256": "504b362cde850d56afb1cea6f5b7b0ee014d9dd7b47e188599d91c804502cd3e",
-        "patched_sha256": "b2939d05c08af970213ff8431ed04c1709f3b77138e3407b10f6497a92d05508",
+        "patched_sha256": "8ed4bd9dbe28e62f43a3a5d57595320681ca965aec8f4e0e2b2f06a24a7bfec2",
         "expected_size": 36713984,
         "patches": [
             (
@@ -155,6 +155,12 @@ MOD_DEFINITIONS: List[Dict] = [
                 bytes.fromhex("488b8958060000e926c4a6ffcccccccccccccccccccccccccccccccccccccccc"),
                 bytes.fromhex("4885c97413488b89580600004885c97407e91cc4a6ffcccc31c0c3cccccccccc"),
                 "is_trader NULL component check (test rcx, jz return_false)",
+            ),
+            (
+                0x713310,
+                bytes.fromhex("85c90f94c084c00f94c084c00f848a060000"),
+                bytes.fromhex("85c9750848837c2448007506e98b06000090"),
+                "UI item-slot 'outside' lookup NULL container guard (0x140713f10)",
             ),
         ],
     },
@@ -253,6 +259,14 @@ def inspect_target(mod_def: Dict, workshop_dir: Optional[str], game_dir: Optiona
         result["details"].append(
             f"Notice: File SHA256 ({curr_sha256[:12]}...) differs from baseline ({mod_def['orig_sha256'][:12]}...), "
             f"but all patch sites match expected original opcodes (binary compatible)."
+        )
+        return result
+
+    # Cumulative patch state: some patches applied, remaining patches match original opcodes
+    if not opcodes_corrupted and not all_patched and not all_orig:
+        result["status"] = "ORIGINAL_COMPATIBLE"
+        result["details"].append(
+            f"Notice: Cumulative patch state detected (some patches already present, remaining patch sites match original opcodes)."
         )
         return result
 

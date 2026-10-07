@@ -68,6 +68,20 @@ This repository provides clear-text documentation of the root causes, exact disa
 
 ---
 
+### 4. UI Item-Slot "outside" Layout Lookup CTD (`0x14074707f` / `0x140713f3b`)
+- **Symptom:** Hovering over or interacting with certain inventory/equipment items triggers an instant crash with `STATUS_ACCESS_VIOLATION` (`0xc0000005` reading `0x0000000000000028`).
+- **Root Cause:**
+  During item UI event handling (`MyGUI::WidgetInput` -> `0x140713e50`), the engine queries the item's visual attachment container (`call *0x70(%rax)`) to look up its `"outside"` slot node in an internal `std::map`. For items without visual external attachments or custom modded equipment, the virtual method returns `NULL`. The engine then calls `0x14004fdb8` (`std::map::find` at `0x140747070`) passing `rcx = NULL`, causing `0x14074707f` (`movzbl 0x28(%rcx), %eax`) to crash on NULL dereference.
+- **Fix:**
+  In `kenshi_x64.exe` at `0x140713f10`, check if the container pointer (`0x48(%rsp)`) is NULL when comparing the slot name against `"outside"`. If NULL, immediately branch to the clean string-cleanup function exit (`0x1407145ac`).
+  - **Raw File Offset:** `0x713310` (VA `0x140713f10`)
+  - **Original Opcode (18 bytes):**
+    `85 c9 0f 94 c0 84 c0 0f 94 c0 84 c0 0f 84 8a 06 00 00`
+  - **Patched Opcode (18 bytes):**
+    `85 c9 75 08 48 83 7c 24 48 00 75 06 e9 8b 06 00 00 90`
+
+---
+
 ## How to Apply
 
 ### Option A: Use Your Favorite AI Coding Assistant (Recommended)
