@@ -145,9 +145,9 @@ MOD_DEFINITIONS: List[Dict] = [
         "category": "game",
         "item_id": "kenshi_x64",
         "filename": "kenshi_x64.exe",
-        "description": "NULL-safe guards: 1) is_trader (0x1405cf4e0) crash fix for Organize-the-Crafting-Stations; 2) UI item-slot 'outside' lookup (0x140713f10) crash fix on items lacking visual layout containers",
+        "description": "NULL-safe guards: 1) is_trader (0x1405cf4e0) crash fix for Organize-the-Crafting-Stations; 2) UI item-slot 'outside' lookup (0x140713f10) crash fix; 3) Character equipment container lookup (0x140012788 -> 0x14026b745) NULL/bounds guard",
         "orig_sha256": "504b362cde850d56afb1cea6f5b7b0ee014d9dd7b47e188599d91c804502cd3e",
-        "patched_sha256": "8ed4bd9dbe28e62f43a3a5d57595320681ca965aec8f4e0e2b2f06a24a7bfec2",
+        "patched_sha256": "452d7a89b36f80c5e313844200b39f70cace691d7d11c497db651d2da0b1d1f5",
         "expected_size": 36713984,
         "patches": [
             (
@@ -161,6 +161,18 @@ MOD_DEFINITIONS: List[Dict] = [
                 bytes.fromhex("85c90f94c084c00f94c084c00f848a060000"),
                 bytes.fromhex("85c9750848837c2448007506e98b06000090"),
                 "UI item-slot 'outside' lookup NULL container guard (0x140713f10)",
+            ),
+            (
+                0x11B88,
+                bytes.fromhex("e9c38f2500"),
+                bytes.fromhex("e9b88f2500"),
+                "Equipment container lookup thunk redirected to safe preamble (0x140012788 -> 0x14026b745)",
+            ),
+            (
+                0x26AB45,
+                bytes.fromhex("cccccccccccccccccccccc"),
+                bytes.fromhex("4885c9740583fa047601c3"),
+                "Equipment lookup preamble guard (test rcx, rcx; je ret; cmp edx, 4; jbe enter; ret)",
             ),
         ],
     },

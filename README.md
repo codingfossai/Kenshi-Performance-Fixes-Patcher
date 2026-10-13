@@ -12,6 +12,7 @@ When playing heavily modded Kenshi setups (such as the [MEGA Kaizo/UWE+ Modpack]
 1. **A rhythmic micro-stutter every ~1.65 seconds** (a ~650 ms full simulation freeze).
 2. **Periodic hitches every ~5 seconds** caused by disk I/O on the main render thread.
 3. **Instant crash to desktop (CTD, `0xc0000005`)** when hovering over or organizing buildings and crafting stations in the build menu.
+4. **Instant CTD (`0xc0000005`)** when interacting with cages, looting bodies, or updating character inventory/equipment components.
 
 This repository provides clear-text documentation of the root causes, exact disassembly breakdowns, and an automated verification script ([`patch_mods.py`](patch_mods.py)) to apply and preserve these fixes against Steam Workshop re-downloads.
 
@@ -79,6 +80,22 @@ This repository provides clear-text documentation of the root causes, exact disa
     `85 c9 0f 94 c0 84 c0 0f 94 c0 84 c0 0f 84 8a 06 00 00`
   - **Patched Opcode (18 bytes):**
     `85 c9 75 08 48 83 7c 24 48 00 75 06 e9 8b 06 00 00 90`
+
+---
+
+### 5. Character Equipment Container Lookup CTD (`0x14026b7b9` / `0x140012788`)
+- **Symptom:** Interacting with character cages (e.g. cannibalism / eat-alive tasks), looting entities, or updating inventory slots triggers an instant crash with `STATUS_ACCESS_VIOLATION` (`0xc0000005` reading `0x00000000000001f8` or `0x0000000000000008`).
+- **Root Cause:**
+  Callers (such as `0x14050dd03`) call thunk `0x140012788` -> `0x14026b750` passing a container pointer in `%rcx` and slot index `0..4` in `%edx`. At `0x14026b770`, the function computes an offset into `%rcx` based on `%edx` into `%r13` (`lea 0x1f8(%rcx), %r13`). If the target entity lacks the inventory component (`%rcx == NULL`), or if `%edx > 4` (unsupported slot), `%r13` becomes `0x1f8` or `NULL`, and `0x14026b7b9` (`mov 0x8(%r13), %ebx`) unconditionally dereferences `[%r13 + 8]`, crashing the engine.
+- **Fix:**
+  Insert a NULL and bounds-check preamble in the unused alignment padding preceding `0x14026b750` (at `0x14026b745`, raw offset `0x26ab45`) returning immediately if `%rcx == NULL` or `%edx > 4`. Redirect thunk `0x140012788` (offset `0x11b88`) to the preamble:
+  - **Thunk File Offset:** `0x11B88` (VA `0x140012788`)
+    - **Original Opcode:** `e9 c3 8f 25 00` (`jmp 0x14026b750`)
+    - **Patched Opcode:** `e9 b8 8f 25 00` (`jmp 0x14026b745`)
+  - **Preamble File Offset:** `0x26AB45` (VA `0x14026b745`)
+    - **Original Opcode (11 bytes):** `cc cc cc cc cc cc cc cc cc cc cc`
+    - **Patched Opcode (11 bytes):** `48 85 c9 74 05 83 fa 04 76 01 c3`
+      - `test %rcx, %rcx; je ret; cmp $4, %edx; jbe enter; ret`
 
 ---
 
