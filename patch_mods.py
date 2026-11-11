@@ -20,6 +20,13 @@ Supported Patches:
      crafting stations/buildings in the build menu. Buildings lack a trader component (NULL),
      causing Kenshi to blind-dereference [rcx + 0x658], crashing with 0xc0000005 at 0x140387870.
    - Fix: Inserts a NULL check in is_trader returning false (0) if rcx or [rcx + 0x658] is NULL.
+5. ReturnToMainMenu.dll (Steam Workshop ID: 3806763804)
+   - Issue: The exe crash fixes change the Kenshi executable hash, so RTM ("Return to Main Menu")
+     disables itself and pops up "Unavailable: unsupported file version." (RTM-D02) every launch.
+   - Fix: Updates RTM's exe-hash whitelist SHA256 slot (file offset 0x687D0) to the patched exe's
+     hash so the patched exe passes on the Steam branch. The MD5 slot holds the GOG build's hash
+     (a match there classifies the exe as GOG and triggers RTM-D04 instead), so it must not be
+     patched. Requires the exe to be PATCHED; this entry is skipped otherwise (see readme).
 
 Usage:
     python patch_mods.py [--check-only] [--dry-run] [--force]
@@ -176,7 +183,27 @@ MOD_DEFINITIONS: List[Dict] = [
             ),
         ],
     },
+    {
+        "name": "ReturnToMainMenu (RTM exe whitelist)",
+        "category": "workshop",
+        "item_id": "3806763804",
+        "filename": "ReturnToMainMenu.dll",
+        "description": "RTM D02 gate: the exe crash fixes change the Kenshi executable hash (SHA256 452d7a89...), so RTM ('Return to Main Menu') logs DISABLED 'Kenshi executable hash mismatch' and pops up 'Unavailable: unsupported file version.' (RTM-D02) on launch; the game still runs. Gate logic in ReturnToMainMenu.dll (0x1800023F0): SHA256 hex of the running exe is compared against slot 0x687D0 (pristine Steam exe 504b362c...). On mismatch an MD5 hex compare against slot 0x62800 (VA 0x180064000) follows, but that slot holds the GOG build's MD5 (067f9ed0...) -- a match there classifies the exe as GOG 1.0.65 and fails at the GOG layout check (RTM-D04), so the MD5 slot must NOT be patched. This entry replaces the 0x687D0 SHA slot with the patched-exe SHA256 so patched-exe users pass on the Steam branch. Requires the exe definition to be PATCHED (exe + DLL are patched together); if the exe patched-hash changes (new game build), update this slot value + the exe definition together.",
+        "orig_sha256": "2c8c17b353ed486c5212592b158913f73ef5b1e62ce2f6020d3eeb615929be22",
+        "patched_sha256": "d328c7f2e97e783d3a417739dd30778f2e778805985e1d27b5c4134f7700e62c",
+        "expected_size": 543744,
+        "requires_patched": ["kenshi_x64"],
+        "patches": [
+            (
+                0x687D0,
+                b"504b362cde850d56afb1cea6f5b7b0ee014d9dd7b47e188599d91c804502cd3e",
+                b"452d7a89b36f80c5e313844200b39f70cace691d7d11c497db651d2da0b1d1f5",
+                "D02 SHA gate: pristine-Steam SHA256 504b362c... @0x687D0 -> patched-exe SHA256 452d7a89...",
+            ),
+        ],
+    },
 ]
+
 
 
 def compute_sha256(data: bytes) -> str:
@@ -337,7 +364,7 @@ def main():
     detected_workshop, detected_game = find_default_steam_paths()
 
     parser = argparse.ArgumentParser(
-        description="Verify and patch Kenshi mod stalls (BetterPhysics, FallDamage, PersistentPrisoners) & build menu CTD."
+        description="Verify and patch Kenshi mod stalls (BetterPhysics, FallDamage, PersistentPrisoners), build menu CTD & RTM exe whitelist popup.",
     )
     parser.add_argument(
         "--workshop-dir",
@@ -375,11 +402,19 @@ def main():
     has_incompatible = False
     has_unpatched = False
 
+    # Pre-inspect all definitions so entries may be gated on another entry's
+    # status (the RTM DLL whitelist patch is only valid once the exe itself
+    # is patched; against a pristine exe it would regress users to RTM-D02).
+    statuses = {
+        d["item_id"]: inspect_target(d, args.workshop_dir, args.game_dir)
+        for d in MOD_DEFINITIONS
+    }
+
     for mod_def in MOD_DEFINITIONS:
         print(f"\n[{mod_def['name']}] (ID: {mod_def['item_id']})")
         print(f"  Purpose: {mod_def['description']}")
 
-        info = inspect_target(mod_def, args.workshop_dir, args.game_dir)
+        info = statuses[mod_def["item_id"]]
         status = info["status"]
 
         if status == "PATCHED":
@@ -397,12 +432,15 @@ def main():
                 print(f"    - {d}")
             if args.check_only:
                 print("  Action: Patch needed (--check-only specified, skipping write).")
+            elif mod_def.get("requires_patched") and not any(
+                statuses[d]["status"] == "PATCHED" for d in mod_def["requires_patched"]
+            ):
+                print(f"  Action: SKIPPED - this patch is only valid with a patched exe; none of {mod_def['requires_patched']} is PATCHED, and applying it would regress a pristine exe to RTM-D02.")
             else:
                 print("  Action: Applying binary patch...")
                 success = apply_patch(mod_def, info, dry_run=args.dry_run)
                 if not success:
                     print("  [-] Patching failed.")
-
         elif status == "INCOMPATIBLE_UPDATE":
             has_incompatible = True
             print("  Status: [ALERT: INCOMPATIBLE UPDATE / UNEXPECTED BYTES]")

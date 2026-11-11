@@ -13,6 +13,7 @@ When playing heavily modded Kenshi setups (such as the [MEGA Kaizo/UWE+ Modpack]
 2. **Periodic hitches every ~5 seconds** caused by disk I/O on the main render thread.
 3. **Instant crash to desktop (CTD, `0xc0000005`)** when hovering over or organizing buildings and crafting stations in the build menu.
 4. **Instant CTD (`0xc0000005`)** when interacting with cages, looting bodies, or updating character inventory/equipment components.
+5. **A red popup `Unavailable: unsupported file version.`** (`RTM-D02`) on every launch after the exe crash fixes are applied.
 
 This repository provides clear-text documentation of the root causes, exact disassembly breakdowns, and an automated verification script ([`patch_mods.py`](patch_mods.py)) to apply and preserve these fixes against Steam Workshop re-downloads.
 
@@ -96,6 +97,20 @@ This repository provides clear-text documentation of the root causes, exact disa
     - **Original Opcode (11 bytes):** `cc cc cc cc cc cc cc cc cc cc cc`
     - **Patched Opcode (11 bytes):** `48 85 c9 74 05 83 fa 04 76 01 c3`
       - `test %rcx, %rcx; je ret; cmp $4, %edx; jbe enter; ret`
+### 6. `ReturnToMainMenu.dll` (Workshop ID: `3806763804`) — `RTM-D02` "Unavailable: unsupported file version."
+- **Symptom:** After the exe crash fixes (§3–§5) change `kenshi_x64.exe`, launching the game shows the popup `Unavailable: unsupported file version. Component: Kenshi RTM-D02.` RTM disables itself for that session; the game itself runs normally. (Not a Proton bug; same logic under Windows.)
+- **Root Cause:**
+  RTM ("Return to Main Menu") hard-codes a whitelist of allowed `Kenshi_x64.exe` builds. Inside its whitelist gate (`0x1800023F0`), the SHA256 hex of the **running exe** is compared against the 64-char hex slot at **file offset `0x687D0`** = `504b362c...` (the pristine Steam executable). The crash-fixed exe (`452d7a89...`) never matches, so RTM logs `IMPORT_UNAVAILABLE` / "observed DLL mismatch" and pops up `RTM-D02`.
+
+  **Why the MD5 slot must NOT be patched:** on SHA mismatch, RTM falls back to comparing the exe's MD5 hex (two 16-byte SSE `pcmpeqb` chunks at `0x1800026a3`) against the slot at **file offset `0x62800`** = `067f9ed0aef2ab01213349bf76a0a758` — that is the **GOG** build's MD5, not a second chance for Steam builds. Swapping in your patched exe's MD5 there makes RTM accept your Steam exe **as GOG 1.0.65**, which then fails the GOG layout check → popup `RTM-D04` (`Unavailable: GOG game layout could not be resolved. Component: Kenshi GOG 1.0.65. Step: TitleScreen visibility.`) instead of fixing anything. This was verified live; the MD5 slot must stay pristine.
+- **Fix:**
+  Replace the stock SHA256 value in the whitelist slot with the patched exe's hash, so patched exes pass on the Steam branch:
+  - **Raw File Offset:** `0x687D0` (VA `0x180069FD0`)
+  - **Original Slot Value:** `504b362cde850d56afb1cea6f5b7b0ee014d9dd7b47e188599d91c804502cd3e` (SHA256 of the pristine Steam exe)
+  - **Patched Slot Value:** `452d7a89b36f80c5e313844200b39f70cace691d7d11c497db651d2da0b1d1f5` (SHA256 of the crash-fixed exe)
+  - **Consequence & guard:** while applied, a *pristine* exe is rejected with `RTM-D02`. `patch_mods.py` therefore applies the RTM entry only when the exe definition is `PATCHED` (exe + DLL are patched together); otherwise the entry reports `SKIPPED`.
+  - **GOG installs:** skip this entry entirely (your build is already whitelisted via the MD5 slot).
+  - **Maintenance rule:** when the exe patched-hash changes (new game build), update the `0x687D0` slot value together with the exe definition, and record the new DLL hash.
 
 ---
 
@@ -140,7 +155,7 @@ Prerequisites: Python 3.8+ installed.
 
 Steam Workshop periodically audits subscribed items and re-downloads original files, silently reverting local patches.
 
-Running `python patch_mods.py` whenever you notice stuttering will instantly verify all four targets and re-apply the fixes in seconds.
+Running `python patch_mods.py` whenever you notice stuttering will instantly verify all five targets and re-apply the fixes in seconds.
 
 ---
 
